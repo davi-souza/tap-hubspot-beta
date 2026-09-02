@@ -191,7 +191,7 @@ class hubspotStream(RESTStream):
             logging.info(f"CURL command for failed request: {curl_command}")
             raise exception_class(f"Msg {message}, response {response.text}")
 
-        if 500 <= response.status_code < 600 or response.status_code in [400, 401, 104]:
+        if 500 <= response.status_code < 600 or response.status_code == 408:
             msg = (
                 f"{response.status_code} Server Error: "
                 f"{response.reason} for path: {self.path}"
@@ -202,7 +202,7 @@ class hubspotStream(RESTStream):
             self.log_rate_limit(response)
             raise RetriableAPIError(f"429 Too Many Requests, response {response.text}")
 
-        elif 400 < response.status_code < 500:
+        elif 400 <= response.status_code < 500:
             msg = (
                 f"{response.status_code} Client Error: "
                 f"{response.reason} for path: {self.path}"
@@ -299,7 +299,8 @@ class hubspotStream(RESTStream):
                         state = found
                         del stream_state_partitions[index]
                     else:
-                        state = stream_state_partitions.append({"context": state_partition_context})
+                        state = {"context": state_partition_context}
+                        stream_state_partitions.append(state)
                 else:
                     state = self.stream_state
                 finalize_state_progress_markers(state)
@@ -371,10 +372,11 @@ class hubspotStream(RESTStream):
 
         schema = self.schema
         for key, value in row.get("properties", {}).items():
-            if "number" in schema["properties"][key]["type"]:
+            field_schema = schema["properties"].get(key, {})
+            if "number" in field_schema.get("type", []):
                 try:
                     row["properties"][key] = float(value)
-                except:
+                except (TypeError, ValueError):
                     row["properties"][key] = None
         return row
 

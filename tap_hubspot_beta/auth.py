@@ -1,7 +1,7 @@
 """hubspot Authentication."""
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import requests
@@ -67,7 +67,7 @@ class OAuth2Authenticator(APIAuthenticatorBase):
 
     def is_token_valid(self) -> bool:
         access_token = self._tap._config.get("access_token")
-        now = round(datetime.utcnow().timestamp())
+        now = round(datetime.now(timezone.utc).timestamp())
         expires_in = self._tap._config.get("expires_in")
 
         return not bool(
@@ -85,8 +85,8 @@ class OAuth2Authenticator(APIAuthenticatorBase):
 
     @backoff.on_exception(backoff.expo, RetriableAPIError, max_tries=5)
     def request_token(self, endpoint, data):
-        token_response = requests.post(endpoint, data)
-        if 500 <= token_response.status_code <= 600:
+        token_response = requests.post(endpoint, data=data, timeout=60)
+        if 500 <= token_response.status_code < 600:
             raise RetriableAPIError(f"Auth error: {token_response.text}")
         elif 400 <= token_response.status_code < 500:
             raise FatalAPIError(f"Auth error: {token_response.text}")
@@ -99,13 +99,13 @@ class OAuth2Authenticator(APIAuthenticatorBase):
         Raises:
             RuntimeError: When OAuth login fails.
         """
-        request_time = round(datetime.utcnow().timestamp())
+        request_time = round(datetime.now(timezone.utc).timestamp())
         auth_request_payload = self.oauth_request_payload
         token_response = self.request_token(self.auth_endpoint, data=auth_request_payload)
         try:
             token_response.raise_for_status()
             self.logger.info("OAuth authorization attempt was successful.")
-        except Exception as ex:
+        except requests.HTTPError as ex:
             raise RuntimeError(
                 f"Failed OAuth login, response was '{token_response.json()}'. {ex}"
             )
